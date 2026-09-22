@@ -1,0 +1,2047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Battle City Low Poly - Phase 3 Boss & Power-ups</title>
+    
+    <!-- External CDN Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #080a0f;
+            font-family: 'Press Start 2P', monospace;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        .arcade-shadow {
+            text-shadow: 3px 3px 0px #000, -2px -2px 0px #ff2a2a;
+        }
+        .arcade-box {
+            box-shadow: 0px 0px 20px rgba(0, 0, 0, 0.8), inset 0px 0px 10px rgba(255, 255, 255, 0.1);
+            border: 4px solid #3b82f6;
+        }
+        .fire-btn-active {
+            transform: scale(0.92) !important;
+            box-shadow: 0px 0px 15px #ef4444 !important;
+        }
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.05); }
+        }
+        .animate-boss-alert {
+            animation: pulse-glow 1s infinite;
+        }
+    </style>
+</head>
+<body class="text-white">
+
+    <!-- =========================================================================
+         1. HOST VIEW UI (DISPLAYED ON PC / TV / TABLET)
+         ========================================================================= -->
+    <div id="host-view" class="w-full h-full relative hidden">
+        <!-- 3D Canvas -->
+        <canvas id="webgl-canvas"></canvas>
+
+        <!-- TOP HUD -->
+        <div id="hud" class="fixed top-0 left-0 right-0 p-4 pointer-events-none flex justify-between items-start z-10 hidden">
+            <!-- Room Info & Status -->
+            <div class="bg-gray-900/90 backdrop-blur border-2 border-yellow-500 rounded-lg p-3 arcade-box flex flex-col gap-1 min-w-[160px] pointer-events-auto">
+                <div class="text-[10px] text-yellow-400">ROOM CODE</div>
+                <div id="hud-room-code" class="text-lg font-bold text-white tracking-widest">----</div>
+                <div class="text-[9px] text-green-400 flex items-center justify-between gap-1 mt-1">
+                    <span class="flex items-center gap-1">
+                        <span id="network-status-dot" class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        <span id="hud-player-count">1 Connected</span>
+                    </span>
+                    <button id="bgm-hud-toggle" class="bg-gray-800 hover:bg-gray-700 text-yellow-400 px-1.5 py-0.5 rounded border border-yellow-500/50 text-[9px] cursor-pointer">🎵 BGM</button>
+                </div>
+            </div>
+
+            <!-- Horde Timer & Wave System -->
+            <div class="bg-gray-900/90 backdrop-blur border-2 border-red-500 rounded-lg px-6 py-2 text-center arcade-box flex flex-col items-center">
+                <div id="wave-title" class="text-[10px] text-yellow-400 tracking-wider mb-1">INFINITE WAVE 1</div>
+                <div id="timer" class="text-2xl font-bold text-yellow-300 tracking-widest">00:00</div>
+                <div class="text-[9px] text-gray-400 mt-1">ENEMIES: <span id="enemy-count" class="text-white">0</span></div>
+            </div>
+
+            <!-- Eagle Base Health & Score -->
+            <div class="bg-gray-900/90 backdrop-blur border-2 border-blue-500 rounded-lg p-3 arcade-box flex flex-col gap-2 min-w-[180px]">
+                <div class="text-blue-400 text-xs flex items-center justify-between">
+                    <span>EAGLE BASE</span>
+                    <span id="base-hp-text">100%</span>
+                </div>
+                <div class="w-full bg-gray-800 rounded-full h-3 border border-gray-600 overflow-hidden">
+                    <div id="base-hp-bar" class="bg-gradient-to-r from-blue-600 to-cyan-400 h-full w-full transition-all duration-200"></div>
+                </div>
+                <div class="text-xs text-yellow-400 text-right">
+                    SCORE: <span id="score-text" class="text-white">0000</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- BOSS HEALTH BAR OVERLAY (DISPLAYED DURING BOSS WAVE) -->
+        <div id="boss-hp-container" class="fixed top-20 left-1/2 -translate-x-1/2 w-80 max-w-[90vw] bg-black/80 backdrop-blur border-2 border-red-600 rounded-xl p-2 z-10 hidden flex flex-col items-center arcade-box">
+            <div class="text-xs font-bold text-red-500 tracking-widest mb-1 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-red-600 animate-ping"></span>
+                <span>TITAN BOSS TANK</span>
+                <span class="w-2 h-2 rounded-full bg-red-600 animate-ping"></span>
+            </div>
+            <div class="w-full bg-gray-900 rounded-full h-4 border border-red-900 overflow-hidden relative">
+                <div id="boss-hp-bar" class="bg-gradient-to-r from-red-600 via-orange-500 to-yellow-400 h-full w-full transition-all duration-150"></div>
+            </div>
+        </div>
+
+        <!-- POWER-UP ANNOUNCEMENT BANNER -->
+        <div id="powerup-banner" class="fixed top-28 left-1/2 -translate-x-1/2 bg-yellow-500/90 text-black px-4 py-2 rounded-full font-bold text-xs shadow-2xl z-20 pointer-events-none transform scale-0 transition-transform duration-300 border-2 border-white flex items-center gap-2">
+            <span id="powerup-icon">🌟</span>
+            <span id="powerup-msg">STAR POWER ACTIVE!</span>
+        </div>
+
+        <!-- PLAYERS HEALTH & POWERUPS BAR LIST -->
+        <div id="players-hud-bar" class="fixed bottom-3 left-4 right-4 pointer-events-none flex flex-wrap justify-center gap-3 z-10 hidden">
+            <!-- Dynamic player badges populated via JS -->
+        </div>
+
+        <!-- HOST LOBBY & QR CODE OVERLAY -->
+        <div id="host-lobby" class="fixed inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-6 z-20">
+            <div class="max-w-2xl w-full bg-gray-900 border-4 border-yellow-500 rounded-2xl p-6 md:p-8 text-center arcade-box flex flex-col md:flex-row gap-6 items-center">
+                
+                <!-- Left: QR Code Block -->
+                <div class="flex flex-col items-center bg-gray-800/90 p-4 rounded-xl border border-gray-700 w-full md:w-1/2">
+                    <div class="text-xs text-yellow-400 mb-2 font-bold">SCAN WITH PHONE</div>
+                    <div id="qrcode" class="p-2 bg-white rounded-lg shadow-inner flex justify-center items-center"></div>
+                    <div class="text-[10px] text-gray-400 mt-2">ROOM CODE: <span id="lobby-room-code" class="text-cyan-400 font-bold">CONNECTING...</span></div>
+                    <div id="net-mode-badge" class="mt-2 text-[9px] px-2 py-0.5 rounded bg-blue-900/80 text-blue-300 border border-blue-500">INIT NETWORK...</div>
+                </div>
+
+                <!-- Right: Lobby Details & Start -->
+                <div class="flex flex-col w-full md:w-1/2 text-left space-y-4">
+                    <div>
+                        <h1 class="text-2xl font-extrabold text-yellow-400 arcade-shadow">BATTLE CITY 3D</h1>
+                        <p class="text-[10px] text-cyan-400 mt-1">INFINITE HORDES & TITAN BOSSES (1-7 PLAYERS)</p>
+                    </div>
+
+                    <!-- Connected Players Grid -->
+                    <div class="bg-gray-800/80 p-3 rounded-xl border border-gray-700">
+                        <div class="text-[10px] text-gray-300 border-b border-gray-700 pb-1 mb-2 flex justify-between">
+                            <span>CONNECTED SQUADS</span>
+                            <span id="lobby-count-badge" class="text-yellow-400">0/7 PLAYERS</span>
+                        </div>
+                        <div id="connected-players-list" class="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <button id="start-btn" class="w-full py-3.5 bg-gradient-to-r from-yellow-500 to-red-600 hover:from-yellow-400 hover:to-red-500 text-black font-extrabold text-sm rounded-xl shadow-lg transform hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-yellow-300">
+                        START BATTLE
+                    </button>
+                    
+                    <div class="flex justify-between items-center text-[9px] text-gray-400 pt-1">
+                        <button id="bgm-lobby-toggle" class="underline text-yellow-400 hover:text-yellow-300 cursor-pointer">🎵 MUSIC: ON</button>
+                        <button id="toggle-sim-ctrl-btn" class="underline text-cyan-400 hover:text-cyan-300 cursor-pointer">
+                            [Test On-Screen Controller]
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- GAME OVER / VICTORY OVERLAY -->
+        <div id="gameover-screen" class="fixed inset-0 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 z-20 hidden">
+            <div class="max-w-md w-full bg-gray-900 border-4 border-red-600 rounded-2xl p-8 text-center arcade-box">
+                <h2 id="end-title" class="text-3xl font-extrabold text-red-500 arcade-shadow mb-2">GAME OVER</h2>
+                <p id="end-subtitle" class="text-xs text-gray-300 mb-6">THE EAGLE BASE WAS DESTROYED</p>
+
+                <div class="bg-gray-800 rounded-xl p-4 border border-gray-700 text-xs space-y-2 mb-6">
+                    <div class="flex justify-between text-gray-300">
+                        <span>SURVIVAL TIME:</span>
+                        <span id="end-time" class="text-yellow-400 font-bold">00:00</span>
+                    </div>
+                    <div class="flex justify-between text-gray-300">
+                        <span>TANKS DESTROYED:</span>
+                        <span id="end-kills" class="text-red-400 font-bold">0</span>
+                    </div>
+                    <div class="flex justify-between text-gray-300">
+                        <span>FINAL SCORE:</span>
+                        <span id="end-score" class="text-green-400 font-bold">0000</span>
+                    </div>
+                </div>
+
+                <button id="restart-btn" class="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-black font-extrabold text-sm rounded-xl shadow-lg transform hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-green-300">
+                    PLAY AGAIN
+                </button>
+            </div>
+        </div>
+
+        <!-- SIMULATED ON-SCREEN TOUCH CONTROLLER FOR LOCAL TESTING -->
+        <div id="sim-controller-overlay" class="fixed bottom-4 right-4 z-30 hidden bg-gray-900/90 border-2 border-cyan-500 rounded-2xl p-4 backdrop-blur shadow-2xl flex flex-col items-center gap-2">
+            <div class="flex justify-between items-center w-full text-[9px] text-cyan-400 pb-1 border-b border-gray-700">
+                <span>ON-SCREEN TEST CONTROLLER</span>
+                <button id="close-sim-ctrl-btn" class="text-red-400 font-bold">✕</button>
+            </div>
+            <div class="flex items-center gap-4 pt-2">
+                <div id="sim-joystick-zone" class="w-28 h-28 relative border border-dashed border-cyan-500/50 rounded-full flex items-center justify-center"></div>
+                <button id="sim-fire-btn" class="w-20 h-20 rounded-full bg-red-600 active:bg-red-500 text-white font-extrabold text-xs shadow-lg border-2 border-red-300 flex items-center justify-center">
+                    FIRE
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================================================
+         2. MOBILE CONTROLLER VIEW UI (DISPLAYED ON SMARTPHONES)
+         ========================================================================= -->
+    <div id="controller-view" class="w-full h-full relative hidden bg-gray-950 flex flex-col justify-between p-4 select-none">
+        <!-- Controller Header -->
+        <div class="w-full bg-gray-900/90 border-2 border-gray-700 rounded-xl p-3 flex justify-between items-center shadow-md">
+            <div class="flex items-center gap-2">
+                <div id="ctrl-player-badge" class="w-5 h-5 rounded-full bg-yellow-500 border border-white shadow"></div>
+                <div>
+                    <div id="ctrl-player-name" class="text-xs font-bold text-white">PLAYER</div>
+                    <div id="ctrl-status-text" class="text-[9px] text-yellow-400">CONNECTING...</div>
+                </div>
+            </div>
+            <button id="ctrl-fullscreen-btn" class="text-[10px] bg-gray-800 border border-gray-600 px-2.5 py-1.5 rounded text-gray-300 active:bg-gray-700">
+                fullscreen
+            </button>
+        </div>
+
+        <!-- Powerup Mobile Alert Banner -->
+        <div id="ctrl-powerup-badge" class="w-full bg-yellow-500 text-black text-center py-1.5 rounded-lg text-xs font-bold shadow hidden transition-all">
+            ⚡ POWER-UP ACTIVATED!
+        </div>
+
+        <!-- Controller Body (Joystick & Fire Button) -->
+        <div class="flex-1 w-full flex items-center justify-between my-2 relative overflow-hidden">
+            <!-- Left Side: NippleJS Joystick Container -->
+            <div id="joystick-zone" class="w-1/2 h-full relative flex items-center justify-center">
+                <div class="w-36 h-36 rounded-full border-2 border-dashed border-gray-700 pointer-events-none opacity-40"></div>
+            </div>
+
+            <!-- Right Side: Action Fire Button -->
+            <div class="w-1/2 h-full flex items-center justify-center">
+                <button id="fire-btn" class="w-36 h-36 md:w-44 md:h-44 rounded-full bg-gradient-to-br from-red-500 to-red-700 border-4 border-red-300 text-white font-extrabold text-lg shadow-2xl active:brightness-125 transition-all flex flex-col items-center justify-center gap-1">
+                    <span>FIRE</span>
+                    <span class="text-[8px] opacity-80">CANNON</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Controller Footer Status -->
+        <div class="w-full text-center text-[9px] text-gray-500 py-1">
+            BATTLE CITY 3D REMOTE CONTROLLER • KEEP SCREEN ON
+        </div>
+
+        <!-- Join Modal for iOS/Android User Gesture Activation -->
+        <div id="ctrl-join-overlay" class="fixed inset-0 bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-6 z-30">
+            <div class="max-w-xs w-full bg-gray-900 border-2 border-cyan-500 rounded-2xl p-6 text-center arcade-box space-y-4">
+                <div class="text-cyan-400 font-bold text-sm">JOIN BATTLE</div>
+                <div class="text-[10px] text-gray-400">ENTER YOUR PILOT NICKNAME:</div>
+                <input id="ctrl-nickname-input" type="text" maxlength="8" value="TANKER" class="w-full bg-gray-800 border border-gray-600 text-center text-yellow-400 text-xs py-2 rounded focus:outline-none focus:border-yellow-400">
+                <button id="ctrl-connect-btn" class="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-black font-extrabold text-xs rounded-xl shadow-lg border border-cyan-300 active:scale-95 transition-all">
+                    READY TO CONNECT
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* =========================================================================
+           3. ADVANCED RETRO AUDIO SYNTHESIZER WITH 8-BIT BGM ENGINE
+           ========================================================================= */
+        class RetroAudio {
+            constructor() {
+                this.ctx = null;
+                this.bgmTimer = null;
+                this.bgmPlaying = false;
+                this.bgmStep = 0;
+                this.isMuted = false;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioContext();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            toggleBGM() {
+                this.isMuted = !this.isMuted;
+                if (this.isMuted) {
+                    this.stopBGM();
+                } else {
+                    this.startBGM();
+                }
+                return !this.isMuted;
+            }
+
+            startBGM() {
+                if (this.bgmPlaying || this.isMuted) return;
+                this.init();
+                this.bgmPlaying = true;
+                this.bgmStep = 0;
+                
+                // Classic 8-bit Battle Arcade Melodic Motif & Bass Line
+                const bassline = [110, 110, 130.81, 110, 146.83, 110, 130.81, 123.47];
+                const melody = [
+                    220, 0, 261.63, 293.66, 329.63, 293.66, 261.63, 220,
+                    330, 330, 392.00, 440.00, 392.00, 330, 293.66, 261.63,
+                    220, 261.63, 293.66, 329.63, 349.23, 329.63, 293.66, 261.63,
+                    196, 220, 246.94, 261.63, 293.66, 261.63, 220, 196
+                ];
+
+                this.bgmTimer = setInterval(() => {
+                    if (!this.ctx || !this.bgmPlaying) return;
+                    try {
+                        const now = this.ctx.currentTime;
+                        
+                        // Bass Pulse
+                        const bassFreq = bassline[this.bgmStep % bassline.length];
+                        if (bassFreq > 0) {
+                            const osc = this.ctx.createOscillator();
+                            const gain = this.ctx.createGain();
+                            osc.type = 'sawtooth';
+                            osc.frequency.setValueAtTime(bassFreq, now);
+                            gain.gain.setValueAtTime(0.06, now);
+                            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+                            osc.connect(gain);
+                            gain.connect(this.ctx.destination);
+                            osc.start(now);
+                            osc.stop(now + 0.12);
+                        }
+
+                        // Lead Chiptune Melody
+                        const melFreq = melody[this.bgmStep % melody.length];
+                        if (melFreq > 0) {
+                            const osc = this.ctx.createOscillator();
+                            const gain = this.ctx.createGain();
+                            osc.type = 'square';
+                            osc.frequency.setValueAtTime(melFreq, now);
+                            gain.gain.setValueAtTime(0.04, now);
+                            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+                            osc.connect(gain);
+                            gain.connect(this.ctx.destination);
+                            osc.start(now);
+                            osc.stop(now + 0.14);
+                        }
+
+                        this.bgmStep++;
+                    } catch(e) {}
+                }, 150);
+            }
+
+            stopBGM() {
+                this.bgmPlaying = false;
+                if (this.bgmTimer) {
+                    clearInterval(this.bgmTimer);
+                    this.bgmTimer = null;
+                }
+            }
+
+            playShoot() {
+                if (!this.ctx) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(480, now);
+                    osc.frequency.exponentialRampToValueAtTime(70, now + 0.1);
+
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(now);
+                    osc.stop(now + 0.1);
+                } catch(e) {}
+            }
+
+            playExplosion(isLarge = false) {
+                if (!this.ctx) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const duration = isLarge ? 0.6 : 0.25;
+
+                    const bufferSize = this.ctx.sampleRate * duration;
+                    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                    const output = buffer.getChannelData(0);
+                    for (let i = 0; i < bufferSize; i++) {
+                        output[i] = Math.random() * 2 - 1;
+                    }
+
+                    const noise = this.ctx.createBufferSource();
+                    noise.buffer = buffer;
+
+                    const filter = this.ctx.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.setValueAtTime(isLarge ? 400 : 800, now);
+                    filter.frequency.exponentialRampToValueAtTime(20, now + duration);
+
+                    const gain = this.ctx.createGain();
+                    gain.gain.setValueAtTime(isLarge ? 0.6 : 0.3, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+
+                    noise.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    noise.start(now);
+                    noise.stop(now + duration);
+                } catch(e) {}
+            }
+
+            playHit() {
+                if (!this.ctx) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(140, now);
+                    osc.frequency.exponentialRampToValueAtTime(40, now + 0.07);
+
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.07);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(now);
+                    osc.stop(now + 0.07);
+                } catch(e) {}
+            }
+
+            playPowerup() {
+                if (!this.ctx) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const notes = [261.63, 329.63, 392.00, 523.25];
+                    notes.forEach((freq, idx) => {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.value = freq;
+                        gain.gain.setValueAtTime(0.15, now + idx * 0.06);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + idx * 0.06 + 0.12);
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+                        osc.start(now + idx * 0.06);
+                        osc.stop(now + idx * 0.06 + 0.12);
+                    });
+                } catch(e) {}
+            }
+
+            playBossSiren() {
+                if (!this.ctx) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.linearRampToValueAtTime(450, now + 0.3);
+                    osc.frequency.linearRampToValueAtTime(150, now + 0.6);
+
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.6);
+                } catch(e) {}
+            }
+        }
+
+        const audio = new RetroAudio();
+
+        /* =========================================================================
+           4. GLOBAL PALETTES & CONFIGURATION
+           ========================================================================= */
+        const PLAYER_PALETTE = [
+            { name: "P1 Yellow", hex: 0xeab308, tailwind: "bg-yellow-500", text: "text-yellow-400" },
+            { name: "P2 Green",  hex: 0x22c55e, tailwind: "bg-green-500",  text: "text-green-400" },
+            { name: "P3 Blue",   hex: 0x3b82f6, tailwind: "bg-blue-500",   text: "text-blue-400" },
+            { name: "P4 Red",    hex: 0xef4444, tailwind: "bg-red-500",    text: "text-red-400" },
+            { name: "P5 Purple", hex: 0xa855f7, tailwind: "bg-purple-500", text: "text-purple-400" },
+            { name: "P6 Cyan",   hex: 0x06b6d4, tailwind: "bg-cyan-500",   text: "text-cyan-400" },
+            { name: "P7 Orange", hex: 0xf97316, tailwind: "bg-orange-500", text: "text-orange-400" }
+        ];
+
+        const POWERUP_TYPES = [
+            { id: 'star', name: 'DUAL CANNON', icon: '🌟', color: 0xfacc15, msg: 'RAPID DUAL SHOT!' },
+            { id: 'shield', name: 'FORCE SHIELD', icon: '🛡️', color: 0x38bdf8, msg: 'INVINCIBILITY SHIELD!' },
+            { id: 'nuke', name: 'GRENADE NUKE', icon: '💣', color: 0xef4444, msg: 'ALL ENEMIES DESTROYED!' },
+            { id: 'shovel', name: 'BASE FORTIFY', icon: '🛠️', color: 0x94a3b8, msg: 'EAGLE BASE STEEL WALLS!' },
+            { id: 'clock', name: 'FREEZE ENEMIES', icon: '⏱️', color: 0xa855f7, msg: 'ENEMIES FROZEN!' },
+            { id: 'medkit', name: 'REPAIR KIT', icon: '💖', color: 0x22c55e, msg: 'HEALTH RESTORED!' }
+        ];
+
+        /* =========================================================================
+           5. MODE AUTOMATIC DETECTION ENGINE
+           ========================================================================= */
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetRoomCode = urlParams.get('room');
+
+        if (targetRoomCode) {
+            document.getElementById('controller-view').classList.remove('hidden');
+            initControllerApp(targetRoomCode.toUpperCase());
+        } else {
+            document.getElementById('host-view').classList.remove('hidden');
+            initHostApp();
+        }
+
+        /* =========================================================================
+           6. MOBILE CONTROLLER MODULE
+           ========================================================================= */
+        function initControllerApp(roomCode) {
+            let peer = null;
+            let conn = null;
+            let joyManager = null;
+            let broadcastChannel = null;
+
+            const inputState = { dirX: 0, dirZ: 0, shoot: false };
+
+            const statusText = document.getElementById('ctrl-status-text');
+            const playerBadge = document.getElementById('ctrl-player-badge');
+            const playerName = document.getElementById('ctrl-player-name');
+            const overlay = document.getElementById('ctrl-join-overlay');
+            const pwrBadge = document.getElementById('ctrl-powerup-badge');
+
+            document.getElementById('ctrl-connect-btn').addEventListener('click', async () => {
+                audio.init();
+                if ('wakeLock' in navigator) {
+                    try { await navigator.wakeLock.request('screen'); } catch(e){}
+                }
+                overlay.classList.add('hidden');
+                connectToHost();
+            });
+
+            document.getElementById('ctrl-fullscreen-btn').addEventListener('click', () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(()=>{});
+                } else {
+                    document.exitFullscreen().catch(()=>{});
+                }
+            });
+
+            function connectToHost() {
+                const nickname = document.getElementById('ctrl-nickname-input').value.trim() || "TANKER";
+                statusText.innerText = "CONNECTING...";
+
+                try {
+                    peer = new Peer();
+
+                    peer.on('open', () => {
+                        const hostPeerId = `bc3d-${roomCode}`;
+                        conn = peer.connect(hostPeerId, { metadata: { name: nickname } });
+
+                        conn.on('open', () => {
+                            statusText.innerText = "CONNECTED (WEBRTC)";
+                            statusText.className = "text-[9px] text-green-400 font-bold";
+                            setupJoystick();
+                        });
+
+                        conn.on('data', (data) => {
+                            handleHostMessage(data, nickname);
+                        });
+
+                        conn.on('close', () => {
+                            statusText.innerText = "DISCONNECTED";
+                            statusText.className = "text-[9px] text-red-500 font-bold";
+                        });
+                    });
+
+                    peer.on('error', (err) => {
+                        setupBroadcastFallback(nickname);
+                    });
+                } catch(err) {
+                    setupBroadcastFallback(nickname);
+                }
+
+                setTimeout(() => {
+                    if (!conn || !conn.open) {
+                        setupBroadcastFallback(nickname);
+                    }
+                }, 2800);
+            }
+
+            function setupBroadcastFallback(nickname) {
+                if (broadcastChannel) return;
+                try {
+                    const clientId = 'client_' + Math.random().toString(36).substring(2, 7);
+                    broadcastChannel = new BroadcastChannel(`bc3d-${roomCode}`);
+
+                    statusText.innerText = "CONNECTED (LOCAL BUS)";
+                    statusText.className = "text-[9px] text-yellow-400 font-bold";
+
+                    broadcastChannel.onmessage = (evt) => {
+                        const data = evt.data;
+                        if (data && data._target === clientId) {
+                            handleHostMessage(data, nickname);
+                        }
+                    };
+
+                    broadcastChannel.postMessage({
+                        _target: 'host',
+                        type: 'client_join',
+                        senderId: clientId,
+                        name: nickname
+                    });
+
+                    conn = {
+                        open: true,
+                        send: (data) => {
+                            broadcastChannel.postMessage({
+                                _target: 'host',
+                                senderId: clientId,
+                                ...data
+                            });
+                        }
+                    };
+
+                    setupJoystick();
+                } catch(e) {
+                    statusText.innerText = "CONNECTION FAILED";
+                }
+            }
+
+            function handleHostMessage(data, nickname) {
+                if (data.type === 'init_slot') {
+                    const palette = PLAYER_PALETTE[data.slotIndex % PLAYER_PALETTE.length];
+                    playerBadge.className = `w-5 h-5 rounded-full ${palette.tailwind} border border-white shadow`;
+                    playerName.innerText = `${nickname} (${palette.name})`;
+                } else if (data.type === 'powerup_acquired') {
+                    if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
+                    pwrBadge.innerText = `${data.icon} ${data.msg}`;
+                    pwrBadge.classList.remove('hidden');
+                    setTimeout(() => pwrBadge.classList.add('hidden'), 3000);
+                } else if (data.type === 'hit_vibrate') {
+                    if (navigator.vibrate) navigator.vibrate(100);
+                }
+            }
+
+            function sendInputState() {
+                if (conn && conn.open) {
+                    conn.send({ type: 'input', dirX: inputState.dirX, dirZ: inputState.dirZ, shoot: inputState.shoot });
+                }
+            }
+
+            function setupJoystick() {
+                if (joyManager) return;
+
+                const zone = document.getElementById('joystick-zone');
+                joyManager = nipplejs.create({
+                    zone: zone,
+                    mode: 'static',
+                    position: { left: '50%', top: '50%' },
+                    color: '#06b6d4',
+                    size: 110
+                });
+
+                joyManager.on('move', (evt, data) => {
+                    if (data && data.vector) {
+                        inputState.dirX = Math.round(data.vector.x * 100) / 100;
+                        inputState.dirZ = Math.round(-data.vector.y * 100) / 100;
+                        sendInputState();
+                    }
+                });
+
+                joyManager.on('end', () => {
+                    inputState.dirX = 0;
+                    inputState.dirZ = 0;
+                    sendInputState();
+                });
+
+                const fireBtn = document.getElementById('fire-btn');
+                
+                const triggerFireStart = (e) => {
+                    e.preventDefault();
+                    fireBtn.classList.add('fire-btn-active');
+                    inputState.shoot = true;
+                    if (navigator.vibrate) navigator.vibrate(20);
+                    sendInputState();
+                };
+
+                const triggerFireEnd = (e) => {
+                    e.preventDefault();
+                    fireBtn.classList.remove('fire-btn-active');
+                    inputState.shoot = false;
+                    sendInputState();
+                };
+
+                fireBtn.addEventListener('touchstart', triggerFireStart, { passive: false });
+                fireBtn.addEventListener('touchend', triggerFireEnd, { passive: false });
+                fireBtn.addEventListener('mousedown', triggerFireStart);
+                fireBtn.addEventListener('mouseup', triggerFireEnd);
+            }
+        }
+
+        /* =========================================================================
+           7. HOST 3D GAME ENGINE MODULE
+           ========================================================================= */
+        function initHostApp() {
+            const roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
+            document.getElementById('hud-room-code').innerText = roomCode;
+            document.getElementById('lobby-room-code').innerText = roomCode;
+
+            const joinUrl = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
+            new QRCode(document.getElementById("qrcode"), {
+                text: joinUrl,
+                width: 140,
+                height: 140,
+                colorDark : "#0f172a",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+
+            const activePlayers = new Map();
+
+            // Local Host Player (Player 0)
+            const hostPlayerId = 'HOST_LOCAL';
+            activePlayers.set(hostPlayerId, {
+                id: hostPlayerId,
+                slotIndex: 0,
+                name: "HOST (P1)",
+                input: { dirX: 0, dirZ: 0, shoot: false },
+                tank: null,
+                hp: 100,
+                lives: 3,
+                kills: 0,
+                starTimer: 0,
+                shieldTimer: 0
+            });
+
+            let peer = null;
+            let broadcastChannel = null;
+            const netModeBadge = document.getElementById('net-mode-badge');
+
+            try {
+                peer = new Peer(`bc3d-${roomCode}`);
+
+                peer.on('open', () => {
+                    netModeBadge.innerText = "P2P ONLINE (WEBRTC)";
+                    netModeBadge.className = "mt-2 text-[9px] px-2 py-0.5 rounded bg-green-900/80 text-green-300 border border-green-500";
+                    updateLobbyUI();
+                });
+
+                peer.on('connection', (conn) => {
+                    handleIncomingConnection(conn.peer, conn.metadata ? conn.metadata.name : null, conn);
+                });
+
+                peer.on('error', (err) => {
+                    setupHostBroadcastFallback();
+                });
+            } catch(e) {
+                setupHostBroadcastFallback();
+            }
+
+            function setupHostBroadcastFallback() {
+                if (broadcastChannel) return;
+                netModeBadge.innerText = "LOCAL BUS (SANDBOX)";
+                netModeBadge.className = "mt-2 text-[9px] px-2 py-0.5 rounded bg-yellow-900/80 text-yellow-300 border border-yellow-500";
+
+                try {
+                    broadcastChannel = new BroadcastChannel(`bc3d-${roomCode}`);
+                    broadcastChannel.onmessage = (evt) => {
+                        const data = evt.data;
+                        if (!data) return;
+
+                        if (data._target === 'host') {
+                            if (data.type === 'client_join') {
+                                const senderId = data.senderId;
+                                const virtualConn = {
+                                    send: (msg) => {
+                                        broadcastChannel.postMessage({ _target: senderId, ...msg });
+                                    }
+                                };
+                                handleIncomingConnection(senderId, data.name, virtualConn);
+                            } else if (data.type === 'input') {
+                                const player = activePlayers.get(data.senderId);
+                                if (player) {
+                                    player.input.dirX = data.dirX;
+                                    player.input.dirZ = data.dirZ;
+                                    player.input.shoot = data.shoot;
+                                }
+                            }
+                        }
+                    };
+                } catch(e) {}
+            }
+
+            function handleIncomingConnection(peerId, name, conn) {
+                if (activePlayers.size >= 7) return;
+
+                const slotIndex = findNextAvailableSlot();
+                const playerName = name || `PILOT ${slotIndex + 1}`;
+
+                const playerObj = {
+                    id: peerId,
+                    conn: conn,
+                    slotIndex: slotIndex,
+                    name: playerName,
+                    input: { dirX: 0, dirZ: 0, shoot: false },
+                    tank: null,
+                    hp: 100,
+                    lives: 3,
+                    kills: 0,
+                    starTimer: 0,
+                    shieldTimer: 0
+                };
+
+                activePlayers.set(peerId, playerObj);
+                if (conn && conn.send) {
+                    conn.send({ type: 'init_slot', slotIndex: slotIndex });
+                }
+
+                if (conn.on) {
+                    conn.on('data', (data) => {
+                        if (data.type === 'input') {
+                            playerObj.input.dirX = data.dirX;
+                            playerObj.input.dirZ = data.dirZ;
+                            playerObj.input.shoot = data.shoot;
+                        }
+                    });
+
+                    conn.on('close', () => {
+                        if (playerObj.tank) scene.remove(playerObj.tank.mesh);
+                        activePlayers.delete(peerId);
+                        updateLobbyUI();
+                    });
+                }
+
+                updateLobbyUI();
+                if (gameState === 'PLAYING') {
+                    spawnPlayerTank(playerObj);
+                }
+            }
+
+            function findNextAvailableSlot() {
+                const usedSlots = new Set([...activePlayers.values()].map(p => p.slotIndex));
+                for (let i = 0; i < 7; i++) {
+                    if (!usedSlots.has(i)) return i;
+                }
+                return activePlayers.size;
+            }
+
+            function updateLobbyUI() {
+                const listContainer = document.getElementById('connected-players-list');
+                listContainer.innerHTML = '';
+
+                activePlayers.forEach((p) => {
+                    const palette = PLAYER_PALETTE[p.slotIndex % PLAYER_PALETTE.length];
+                    const item = document.createElement('div');
+                    item.className = "flex items-center justify-between text-xs bg-gray-900/60 p-1.5 rounded border border-gray-700";
+                    item.innerHTML = `
+                        <div class="flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full ${palette.tailwind}"></span>
+                            <span class="text-white font-bold">${p.name}</span>
+                        </div>
+                        <span class="${palette.text} text-[10px]">READY</span>
+                    `;
+                    listContainer.appendChild(item);
+                });
+
+                document.getElementById('lobby-count-badge').innerText = `${activePlayers.size}/7 PLAYERS`;
+                document.getElementById('hud-player-count').innerText = `${activePlayers.size} Connected`;
+            }
+
+            // Test Controller Setup
+            let simJoyManager = null;
+            document.getElementById('toggle-sim-ctrl-btn').addEventListener('click', () => {
+                const simOverlay = document.getElementById('sim-controller-overlay');
+                simOverlay.classList.remove('hidden');
+
+                if (!simJoyManager) {
+                    const simZone = document.getElementById('sim-joystick-zone');
+                    simJoyManager = nipplejs.create({
+                        zone: simZone,
+                        mode: 'static',
+                        position: { left: '50%', top: '50%' },
+                        color: '#06b6d4',
+                        size: 80
+                    });
+
+                    const hostP = activePlayers.get(hostPlayerId);
+
+                    simJoyManager.on('move', (evt, data) => {
+                        if (data && data.vector && hostP) {
+                            hostP.input.dirX = Math.round(data.vector.x * 100) / 100;
+                            hostP.input.dirZ = Math.round(-data.vector.y * 100) / 100;
+                        }
+                    });
+
+                    simJoyManager.on('end', () => {
+                        if (hostP) {
+                            hostP.input.dirX = 0;
+                            hostP.input.dirZ = 0;
+                        }
+                    });
+
+                    const simFireBtn = document.getElementById('sim-fire-btn');
+                    simFireBtn.addEventListener('mousedown', () => { if (hostP) hostP.input.shoot = true; });
+                    simFireBtn.addEventListener('mouseup', () => { if (hostP) hostP.input.shoot = false; });
+                    simFireBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if (hostP) hostP.input.shoot = true; });
+                    simFireBtn.addEventListener('touchend', (e) => { e.preventDefault(); if (hostP) hostP.input.shoot = false; });
+                }
+            });
+
+            document.getElementById('close-sim-ctrl-btn').addEventListener('click', () => {
+                document.getElementById('sim-controller-overlay').classList.add('hidden');
+            });
+
+            /* =========================================================================
+               8. THREE.JS SCENE SETUP & PHYSICS
+               ========================================================================= */
+            const canvas = document.getElementById('webgl-canvas');
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0c10);
+
+            // Camera elevated & angled for 1080p full view of expanded map
+            const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 150);
+            camera.position.set(0, 42, 32);
+            camera.lookAt(0, -2, 1);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
+            dirLight.position.set(20, 40, 20);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            const d = 26;
+            dirLight.shadow.camera.left = -d;
+            dirLight.shadow.camera.right = d;
+            dirLight.shadow.camera.top = d;
+            dirLight.shadow.camera.bottom = -d;
+            scene.add(dirLight);
+
+            // Expanded Grid Constants for 7 Players + Large Hordes
+            const GRID_SIZE = 21;
+            const CELL_SIZE = 2;
+            const MAP_OFFSET = (GRID_SIZE * CELL_SIZE) / 2 - CELL_SIZE / 2;
+
+            function gridToWorld(col, row) {
+                return new THREE.Vector3(col * CELL_SIZE - MAP_OFFSET, 0, row * CELL_SIZE - MAP_OFFSET);
+            }
+
+            const materials = {
+                treads: new THREE.MeshStandardMaterial({ color: 0x1f2937, flatShading: true }),
+                barrel: new THREE.MeshStandardMaterial({ color: 0x4b5563, flatShading: true }),
+                brick: new THREE.MeshStandardMaterial({ color: 0xb45309, flatShading: true, roughness: 0.8 }),
+                steel: new THREE.MeshStandardMaterial({ color: 0x94a3b8, flatShading: true, metalness: 0.8 }),
+                water: new THREE.MeshStandardMaterial({ color: 0x0284c7, flatShading: true, transparent: true, opacity: 0.85, roughness: 0.1 }),
+                bush: new THREE.MeshStandardMaterial({ color: 0x15803d, flatShading: true }),
+                enemyBasic: new THREE.MeshStandardMaterial({ color: 0xef4444, flatShading: true }),
+                enemyFast: new THREE.MeshStandardMaterial({ color: 0xa855f7, flatShading: true }),
+                enemyHeavy: new THREE.MeshStandardMaterial({ color: 0xd97706, flatShading: true, metalness: 0.6 }),
+                enemyBoss: new THREE.MeshStandardMaterial({ color: 0xd97706, flatShading: true, roughness: 0.2 }),
+                shield: new THREE.MeshStandardMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.35, wireframe: true }),
+                bulletPlayer: new THREE.MeshBasicMaterial({ color: 0xfef08a }),
+                bulletEnemy: new THREE.MeshBasicMaterial({ color: 0xfca5a5 }),
+                floor: new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.9 })
+            };
+
+            function createTankMesh(colorHex, scaleMultiplier = 1.0) {
+                const group = new THREE.Group();
+                const mat = new THREE.MeshStandardMaterial({ color: colorHex, flatShading: true, roughness: 0.3 });
+
+                const body = new THREE.Mesh(new THREE.BoxGeometry(1.4 * scaleMultiplier, 0.45 * scaleMultiplier, 1.5 * scaleMultiplier), mat);
+                body.position.y = 0.35 * scaleMultiplier;
+                body.castShadow = true;
+                group.add(body);
+
+                const treadGeo = new THREE.BoxGeometry(0.3 * scaleMultiplier, 0.4 * scaleMultiplier, 1.7 * scaleMultiplier);
+                const leftTread = new THREE.Mesh(treadGeo, materials.treads);
+                leftTread.position.set(-0.75 * scaleMultiplier, 0.25 * scaleMultiplier, 0);
+                group.add(leftTread);
+
+                const rightTread = new THREE.Mesh(treadGeo, materials.treads);
+                rightTread.position.set(0.75 * scaleMultiplier, 0.25 * scaleMultiplier, 0);
+                group.add(rightTread);
+
+                const turret = new THREE.Mesh(new THREE.BoxGeometry(0.85 * scaleMultiplier, 0.35 * scaleMultiplier, 0.85 * scaleMultiplier), mat);
+                turret.position.set(0, 0.7 * scaleMultiplier, -0.05 * scaleMultiplier);
+                group.add(turret);
+
+                const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.08 * scaleMultiplier, 0.08 * scaleMultiplier, 1.1 * scaleMultiplier, 8), materials.barrel);
+                barrel.rotation.x = Math.PI / 2;
+                barrel.position.set(0, 0.7 * scaleMultiplier, 0.6 * scaleMultiplier);
+                group.add(barrel);
+
+                return group;
+            }
+
+            // DETAILED LOW POLY HEROIC EAGLE STATUE BASE
+            function createEagleMesh() {
+                const group = new THREE.Group();
+                
+                const baseMat = new THREE.MeshStandardMaterial({ color: 0x334155, flatShading: true, roughness: 0.5 });
+                const goldMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, flatShading: true, metalness: 0.7, roughness: 0.3 });
+                const darkGoldMat = new THREE.MeshStandardMaterial({ color: 0xd97706, flatShading: true, metalness: 0.6 });
+                const eyeMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4 });
+
+                // Tiered Octagonal Base
+                const base1 = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.0, 0.25, 8), baseMat);
+                base1.position.y = 0.125;
+                base1.castShadow = true;
+                group.add(base1);
+
+                const base2 = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 0.2, 8), goldMat);
+                base2.position.y = 0.35;
+                group.add(base2);
+
+                // Eagle Body / Crest
+                const body = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.9, 5), darkGoldMat);
+                body.position.set(0, 0.8, 0);
+                body.rotation.y = Math.PI / 5;
+                group.add(body);
+
+                const chest = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.45, 0.15), goldMat);
+                chest.position.set(0, 0.82, 0.2);
+                group.add(chest);
+
+                // Outstretched Majestic Low-Poly Wings
+                for (let side of [-1, 1]) {
+                    const wingGroup = new THREE.Group();
+                    
+                    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.12, 0.35), goldMat);
+                    wing.position.set(side * 0.45, 0, 0);
+                    wing.rotation.z = side * -0.35;
+                    wing.rotation.y = side * 0.2;
+                    wingGroup.add(wing);
+
+                    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.6, 3), darkGoldMat);
+                    tip.position.set(side * 0.85, 0.1, -0.05);
+                    tip.rotation.z = side * -0.8;
+                    wingGroup.add(tip);
+
+                    wingGroup.position.set(0, 0.95, 0);
+                    group.add(wingGroup);
+                }
+
+                // Eagle Head & Golden Beak
+                const head = new THREE.Mesh(new THREE.DodecahedronGeometry(0.26, 0), goldMat);
+                head.position.set(0, 1.32, 0.05);
+                group.add(head);
+
+                const beak = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.35, 4), new THREE.MeshStandardMaterial({ color: 0xf97316, flatShading: true }));
+                beak.position.set(0, 1.28, 0.28);
+                beak.rotation.x = Math.PI / 2.3;
+                group.add(beak);
+
+                // Glowing Crest Eyes
+                for (let side of [-1, 1]) {
+                    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.06), eyeMat);
+                    eye.position.set(side * 0.12, 1.34, 0.22);
+                    group.add(eye);
+                }
+
+                const crest = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.35, 3), darkGoldMat);
+                crest.position.set(0, 1.5, -0.08);
+                crest.rotation.x = -0.4;
+                group.add(crest);
+
+                return group;
+            }
+
+            // DETAILED LOW POLY TREE WITH TRUNK & MULTI-LAYERED LEAFY FOLIAGE
+            function createTreeMesh() {
+                const group = new THREE.Group();
+                
+                const trunkMat = new THREE.MeshStandardMaterial({ color: 0x543820, flatShading: true, roughness: 0.9 });
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, 0.7, 5), trunkMat);
+                trunk.position.y = 0.35;
+                trunk.castShadow = true;
+                group.add(trunk);
+
+                const greens = [0x15803d, 0x16a34a, 0x22c55e];
+                
+                const layer1 = new THREE.Mesh(
+                    new THREE.ConeGeometry(0.85, 0.8, 6),
+                    new THREE.MeshStandardMaterial({ color: greens[0], flatShading: true, roughness: 0.7 })
+                );
+                layer1.position.y = 0.85;
+                layer1.castShadow = true;
+                group.add(layer1);
+
+                const layer2 = new THREE.Mesh(
+                    new THREE.ConeGeometry(0.68, 0.7, 6),
+                    new THREE.MeshStandardMaterial({ color: greens[1], flatShading: true, roughness: 0.7 })
+                );
+                layer2.position.y = 1.25;
+                layer2.castShadow = true;
+                group.add(layer2);
+
+                const layer3 = new THREE.Mesh(
+                    new THREE.ConeGeometry(0.45, 0.55, 5),
+                    new THREE.MeshStandardMaterial({ color: greens[2], flatShading: true, roughness: 0.7 })
+                );
+                layer3.position.y = 1.6;
+                layer3.castShadow = true;
+                group.add(layer3);
+
+                group.rotation.y = Math.random() * Math.PI * 2;
+                return group;
+            }
+
+            // ANIMATED LOW POLY WATER TILE
+            function createWaterMesh() {
+                const geo = new THREE.PlaneGeometry(CELL_SIZE, CELL_SIZE, 4, 4);
+                geo.rotateX(-Math.PI / 2);
+                const mesh = new THREE.Mesh(geo, materials.water);
+                mesh.position.y = 0.08;
+                mesh.userData.initialPos = geo.attributes.position.clone();
+                return mesh;
+            }
+
+            // Expanded 21x21 Grid Matrix (0: Empty, 1: Brick, 2: Steel, 3: Water, 4: Bush, 5: Eagle)
+            const initialMapGrid = [
+                [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+                [2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2],
+                [2, 0, 1, 0, 1, 0, 2, 2, 0, 0, 1, 0, 0, 2, 2, 0, 1, 0, 1, 0, 2],
+                [2, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2],
+                [2, 0, 2, 2, 0, 4, 4, 4, 4, 0, 2, 0, 4, 4, 4, 4, 0, 2, 2, 0, 2],
+                [2, 0, 0, 1, 0, 4, 3, 3, 4, 0, 1, 0, 4, 3, 3, 4, 0, 1, 0, 0, 2],
+                [2, 1, 0, 1, 0, 4, 3, 3, 4, 0, 0, 0, 4, 3, 3, 4, 0, 1, 0, 1, 2],
+                [2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 2],
+                [2, 0, 0, 2, 2, 0, 1, 1, 0, 0, 2, 0, 0, 1, 1, 0, 2, 2, 0, 0, 2],
+                [2, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 2],
+                [2, 0, 1, 0, 0, 2, 0, 1, 1, 1, 0, 1, 1, 1, 0, 2, 0, 0, 1, 0, 2],
+                [2, 0, 0, 0, 0, 2, 0, 1, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0, 0, 0, 2],
+                [2, 0, 1, 1, 0, 0, 0, 1, 0, 2, 2, 2, 0, 1, 0, 0, 0, 1, 1, 0, 2],
+                [2, 0, 1, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1, 1, 0, 2],
+                [2, 0, 0, 0, 0, 2, 2, 0, 1, 1, 0, 1, 1, 0, 2, 2, 0, 0, 0, 0, 2],
+                [2, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 2],
+                [2, 1, 0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1, 0, 1, 2],
+                [2, 0, 0, 0, 0, 2, 0, 1, 1, 1, 1, 1, 1, 1, 0, 2, 0, 0, 0, 0, 2],
+                [2, 0, 1, 1, 0, 2, 0, 1, 1, 1, 5, 1, 1, 1, 0, 2, 0, 1, 1, 0, 2],
+                [2, 0, 1, 1, 0, 2, 0, 1, 1, 1, 1, 1, 1, 1, 0, 2, 0, 1, 1, 0, 2],
+                [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+            ];
+
+            let mapGrid = JSON.parse(JSON.stringify(initialMapGrid));
+            const tileMeshes = new Map();
+            const waterMeshes = [];
+            let eagleMesh = null;
+
+            const ground = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE * CELL_SIZE, GRID_SIZE * CELL_SIZE), materials.floor);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            function buildMap() {
+                tileMeshes.forEach(m => scene.remove(m));
+                tileMeshes.clear();
+                waterMeshes.forEach(w => scene.remove(w));
+                waterMeshes.length = 0;
+
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    for (let c = 0; c < GRID_SIZE; c++) {
+                        const type = mapGrid[r][c];
+                        const pos = gridToWorld(c, r);
+
+                        if (type === 1) { // Brick
+                            const mesh = new THREE.Mesh(new THREE.BoxGeometry(CELL_SIZE - 0.05, 1.2, CELL_SIZE - 0.05), materials.brick);
+                            mesh.position.set(pos.x, 0.6, pos.z);
+                            mesh.castShadow = true;
+                            scene.add(mesh);
+                            tileMeshes.set(`${c},${r}`, mesh);
+                        } else if (type === 2) { // Steel
+                            const mesh = new THREE.Mesh(new THREE.BoxGeometry(CELL_SIZE, 1.4, CELL_SIZE), materials.steel);
+                            mesh.position.set(pos.x, 0.7, pos.z);
+                            mesh.castShadow = true;
+                            scene.add(mesh);
+                            tileMeshes.set(`${c},${r}`, mesh);
+                        } else if (type === 3) { // Water (Animated)
+                            const mesh = createWaterMesh();
+                            mesh.position.set(pos.x, 0.08, pos.z);
+                            scene.add(mesh);
+                            waterMeshes.push(mesh);
+                        } else if (type === 4) { // Tree / Bush
+                            const mesh = createTreeMesh();
+                            mesh.position.set(pos.x, 0, pos.z);
+                            scene.add(mesh);
+                            tileMeshes.set(`${c},${r}`, mesh);
+                        } else if (type === 5) { // Eagle
+                            if (!eagleMesh) {
+                                eagleMesh = createEagleMesh();
+                                eagleMesh.position.set(pos.x, 0, pos.z);
+                                scene.add(eagleMesh);
+                            }
+                        }
+                    }
+                }
+            }
+            buildMap();
+
+            // Setup BGM Music Controls
+            const bgmHudBtn = document.getElementById('bgm-hud-toggle');
+            const bgmLobbyBtn = document.getElementById('bgm-lobby-toggle');
+
+            function handleBgmToggle() {
+                audio.init();
+                const active = audio.toggleBGM();
+                const text = active ? "🎵 MUSIC: ON" : "🔇 MUSIC: OFF";
+                if (bgmHudBtn) bgmHudBtn.innerText = active ? "🎵 BGM" : "🔇 MUTE";
+                if (bgmLobbyBtn) bgmLobbyBtn.innerText = text;
+            }
+
+            if (bgmHudBtn) bgmHudBtn.addEventListener('click', handleBgmToggle);
+            if (bgmLobbyBtn) bgmLobbyBtn.addEventListener('click', handleBgmToggle);
+
+            // Keyboard Listeners for Host Player
+            const keysPressed = {};
+            window.addEventListener('keydown', (e) => {
+                keysPressed[e.code] = true;
+                updateHostKeyboard();
+            });
+            window.addEventListener('keyup', (e) => {
+                keysPressed[e.code] = false;
+                updateHostKeyboard();
+            });
+
+            function updateHostKeyboard() {
+                const hostP = activePlayers.get(hostPlayerId);
+                if (!hostP) return;
+
+                let dx = 0, dz = 0;
+                if (keysPressed['KeyA'] || keysPressed['ArrowLeft']) dx -= 1;
+                if (keysPressed['KeyD'] || keysPressed['ArrowRight']) dx += 1;
+                if (keysPressed['KeyW'] || keysPressed['ArrowUp']) dz -= 1;
+                if (keysPressed['KeyS'] || keysPressed['ArrowDown']) dz += 1;
+
+                if (dx !== 0 && dz !== 0) { dx *= 0.7071; dz *= 0.7071; }
+                hostP.input.dirX = dx;
+                hostP.input.dirZ = dz;
+                hostP.input.shoot = !!keysPressed['Space'];
+            }
+
+            /* =========================================================================
+               9. GAME LOGIC, POWERUP ENGINE & INFINITE SWARM AI
+               ========================================================================= */
+            const PLAYER_SPEED = 11.5;
+            const ENEMY_SPEED = 6.2;
+            const BULLET_SPEED = 38.0;
+
+            let gameState = 'LOBBY';
+            let gameTime = 0; // Infinite survival count-up time
+            let currentWave = 1;
+            let waveKills = 0;
+            let killsToNextWave = 10;
+            let score = 0;
+            let totalKills = 0;
+            let baseHp = 100;
+            let freezeTimer = 0;
+            let fortifyTimer = 0;
+            let bossRef = null;
+
+            const enemies = [];
+            const bullets = [];
+            const powerups = [];
+            const particles = [];
+
+            // Spawn coordinates suited for 21x21 expanded grid
+            const playerSpawns = [
+                gridToWorld(4, 19), gridToWorld(16, 19), gridToWorld(2, 19),
+                gridToWorld(18, 19), gridToWorld(6, 18), gridToWorld(14, 18), gridToWorld(10, 19)
+            ];
+
+            const enemySpawnPoints = [
+                gridToWorld(1, 1), gridToWorld(6, 1), gridToWorld(10, 1), gridToWorld(14, 1), gridToWorld(19, 1)
+            ];
+
+            class PlayerTankEntity {
+                constructor(playerObj) {
+                    this.playerObj = playerObj;
+                    const palette = PLAYER_PALETTE[playerObj.slotIndex % PLAYER_PALETTE.length];
+                    this.mesh = createTankMesh(palette.hex);
+                    
+                    // Shield Bubble Visual Mesh
+                    this.shieldMesh = new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 16), materials.shield);
+                    this.shieldMesh.position.y = 0.5;
+                    this.shieldMesh.visible = false;
+                    this.mesh.add(this.shieldMesh);
+
+                    scene.add(this.mesh);
+                    this.lastShotTime = 0;
+                    this.radius = 0.8;
+                    this.resetPosition();
+                }
+
+                resetPosition() {
+                    const sp = playerSpawns[this.playerObj.slotIndex % playerSpawns.length];
+                    this.mesh.position.copy(sp);
+                    this.mesh.rotation.y = 0;
+                }
+
+                update(delta, nowSec) {
+                    if (this.playerObj.hp <= 0) return;
+
+                    // Powerup Timer Depletions
+                    if (this.playerObj.starTimer > 0) this.playerObj.starTimer -= delta;
+                    if (this.playerObj.shieldTimer > 0) {
+                        this.playerObj.shieldTimer -= delta;
+                        this.shieldMesh.visible = true;
+                        this.shieldMesh.rotation.y += delta * 3;
+                    } else {
+                        this.shieldMesh.visible = false;
+                    }
+
+                    const input = this.playerObj.input;
+                    if (input.dirX !== 0 || input.dirZ !== 0) {
+                        const targetAngle = Math.atan2(input.dirX, input.dirZ);
+                        this.mesh.rotation.y = targetAngle;
+
+                        const moveVec = new THREE.Vector3(
+                            Math.sin(targetAngle) * PLAYER_SPEED * delta,
+                            0,
+                            Math.cos(targetAngle) * PLAYER_SPEED * delta
+                        );
+                        const newPos = this.mesh.position.clone().add(moveVec);
+
+                        if (!checkWallCollision(newPos, this.radius)) {
+                            this.mesh.position.copy(newPos);
+                        }
+                    }
+
+                    const cooldown = this.playerObj.starTimer > 0 ? 0.09 : 0.18;
+                    if (input.shoot && (nowSec - this.lastShotTime) >= cooldown) {
+                        this.shoot();
+                        this.lastShotTime = nowSec;
+                    }
+                }
+
+                shoot() {
+                    const dir = new THREE.Vector3(Math.sin(this.mesh.rotation.y), 0, Math.cos(this.mesh.rotation.y));
+                    
+                    if (this.playerObj.starTimer > 0) {
+                        // Dual Cannon Shot
+                        const perp = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(0.35);
+                        const spawnPos1 = this.mesh.position.clone().add(dir.clone().multiplyScalar(1.2)).add(perp);
+                        const spawnPos2 = this.mesh.position.clone().add(dir.clone().multiplyScalar(1.2)).sub(perp);
+                        spawnPos1.y = 0.7; spawnPos2.y = 0.7;
+
+                        bullets.push(new Bullet(spawnPos1, dir, 'player', this.playerObj));
+                        bullets.push(new Bullet(spawnPos2, dir, 'player', this.playerObj));
+                    } else {
+                        const spawnPos = this.mesh.position.clone().add(dir.clone().multiplyScalar(1.2));
+                        spawnPos.y = 0.7;
+                        bullets.push(new Bullet(spawnPos, dir, 'player', this.playerObj));
+                    }
+
+                    audio.playShoot();
+                }
+            }
+
+            class EnemyTankEntity {
+                constructor(spawnPos, type = 'basic') {
+                    this.type = type; // 'basic', 'fast', 'heavy', 'boss'
+                    this.isBoss = type === 'boss';
+
+                    let matColor = 0xef4444;
+                    let scale = 1.0;
+                    this.hp = 1;
+                    this.speed = ENEMY_SPEED;
+                    this.shootInterval = 1.6;
+
+                    if (type === 'fast') {
+                        matColor = 0xa855f7;
+                        this.speed = ENEMY_SPEED * 1.35;
+                        this.shootInterval = 1.0;
+                    } else if (type === 'heavy') {
+                        matColor = 0xd97706;
+                        this.hp = 3;
+                        this.speed = ENEMY_SPEED * 0.75;
+                        this.shootInterval = 1.3;
+                    } else if (type === 'boss') {
+                        matColor = 0xd97706;
+                        scale = 1.8;
+                        this.hp = 25 + Math.min(40, currentWave * 5); // Scaling HP in infinite wave mode
+                        this.speed = ENEMY_SPEED * 0.65;
+                        this.shootInterval = 0.85;
+                    }
+
+                    this.mesh = createTankMesh(matColor, scale);
+                    this.mesh.position.copy(spawnPos);
+                    scene.add(this.mesh);
+
+                    this.radius = 0.8 * scale;
+                    this.rotationAngle = Math.PI;
+                    this.mesh.rotation.y = this.rotationAngle;
+                    this.lastShotTime = 0;
+                    this.changeDirTimer = 0;
+                    this.swarmOffset = (Math.random() - 0.5) * 0.6; // Strategic swarm deviation
+                }
+
+                // AI Pathing: Prioritize closest active Player, fallback to Eagle Base
+                findTargetPosition() {
+                    let closestPlayer = null;
+                    let minDistance = 24.0; // Detection radius for players
+
+                    activePlayers.forEach((p) => {
+                        if (p.tank && p.hp > 0) {
+                            const d = this.mesh.position.distanceTo(p.tank.mesh.position);
+                            if (d < minDistance) {
+                                minDistance = d;
+                                closestPlayer = p.tank.mesh.position;
+                            }
+                        }
+                    });
+
+                    // Primary target is nearby active player; secondary target is Eagle Base
+                    if (closestPlayer) {
+                        return closestPlayer;
+                    }
+                    return gridToWorld(10, 18); // Eagle Base Position on 21x21 grid
+                }
+
+                update(delta, nowSec) {
+                    if (freezeTimer > 0) return; // Frozen by clock powerup
+
+                    this.changeDirTimer -= delta;
+
+                    if (this.changeDirTimer <= 0) {
+                        this.changeDirTimer = 0.8 + Math.random() * 1.2;
+                        const targetPos = this.findTargetPosition();
+                        const diff = targetPos.clone().sub(this.mesh.position);
+
+                        // Primary direction towards priority target
+                        let primaryAngle = Math.atan2(diff.x, diff.z) + this.swarmOffset;
+
+                        // Quantize direction into 4 cardinal directions for retro grid feel with fallback evasion
+                        const candidateAngles = [
+                            primaryAngle,
+                            primaryAngle + Math.PI / 2,
+                            primaryAngle - Math.PI / 2,
+                            primaryAngle + Math.PI
+                        ];
+
+                        let chosenAngle = primaryAngle;
+                        for (let angle of candidateAngles) {
+                            const snapAngle = Math.round(angle / (Math.PI / 2)) * (Math.PI / 2);
+                            const testMove = new THREE.Vector3(Math.sin(snapAngle) * 1.5, 0, Math.cos(snapAngle) * 1.5);
+                            const testPos = this.mesh.position.clone().add(testMove);
+
+                            if (!checkWallCollision(testPos, this.radius)) {
+                                chosenAngle = snapAngle;
+                                break;
+                            }
+                        }
+
+                        this.rotationAngle = chosenAngle;
+                    }
+
+                    this.mesh.rotation.y = this.rotationAngle;
+
+                    const moveVec = new THREE.Vector3(
+                        Math.sin(this.rotationAngle) * this.speed * delta, 0, Math.cos(this.rotationAngle) * this.speed * delta
+                    );
+                    const newPos = this.mesh.position.clone().add(moveVec);
+
+                    if (!checkWallCollision(newPos, this.radius)) {
+                        this.mesh.position.copy(newPos);
+                    } else {
+                        this.changeDirTimer = 0; // Force path recalculation if obstacle hit
+                    }
+
+                    if (nowSec - this.lastShotTime >= this.shootInterval) {
+                        this.shoot();
+                        this.lastShotTime = nowSec;
+                    }
+                }
+
+                shoot() {
+                    const dir = new THREE.Vector3(Math.sin(this.mesh.rotation.y), 0, Math.cos(this.mesh.rotation.y));
+                    
+                    if (this.isBoss) {
+                        // 3-Way Boss Volley
+                        for (let angleOffset of [-0.25, 0, 0.25]) {
+                            const bDir = dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angleOffset);
+                            const spawnPos = this.mesh.position.clone().add(bDir.clone().multiplyScalar(2.0));
+                            spawnPos.y = 0.9;
+                            bullets.push(new Bullet(spawnPos, bDir, 'enemy', null));
+                        }
+                    } else {
+                        const spawnPos = this.mesh.position.clone().add(dir.clone().multiplyScalar(1.2));
+                        spawnPos.y = 0.7;
+                        bullets.push(new Bullet(spawnPos, dir, 'enemy', null));
+                    }
+                }
+
+                destroy() {
+                    scene.remove(this.mesh);
+                    createExplosionVFX(this.mesh.position, this.isBoss ? 0xff0000 : 0xef4444, this.isBoss ? 35 : 15);
+                }
+            }
+
+            class Bullet {
+                constructor(pos, dir, ownerType, ownerPlayer) {
+                    this.ownerType = ownerType;
+                    this.ownerPlayer = ownerPlayer;
+                    this.dir = dir.normalize();
+
+                    const geo = new THREE.SphereGeometry(0.2, 8, 8);
+                    const mat = ownerType === 'player' ? materials.bulletPlayer : materials.bulletEnemy;
+                    this.mesh = new THREE.Mesh(geo, mat);
+                    this.mesh.position.copy(pos);
+
+                    scene.add(this.mesh);
+                    this.active = true;
+                    this.radius = 0.2;
+                }
+
+                update(delta) {
+                    if (!this.active) return;
+
+                    const moveStep = this.dir.clone().multiplyScalar(BULLET_SPEED * delta);
+                    this.mesh.position.add(moveStep);
+                    const pos = this.mesh.position;
+
+                    const col = Math.floor((pos.x + MAP_OFFSET + CELL_SIZE / 2) / CELL_SIZE);
+                    const row = Math.floor((pos.z + MAP_OFFSET + CELL_SIZE / 2) / CELL_SIZE);
+
+                    if (col < 0 || col >= GRID_SIZE || row < 0 || row >= GRID_SIZE) {
+                        this.destroy();
+                        return;
+                    }
+
+                    const tileType = mapGrid[row][col];
+                    if (tileType === 1) { // Brick
+                        mapGrid[row][col] = 0;
+                        const bMesh = tileMeshes.get(`${col},${row}`);
+                        if (bMesh) {
+                            scene.remove(bMesh);
+                            tileMeshes.delete(`${col},${row}`);
+                        }
+                        audio.playHit();
+                        this.destroy();
+                        return;
+                    } else if (tileType === 2) { // Steel
+                        audio.playHit();
+                        this.destroy();
+                        return;
+                    } else if (tileType === 5) { // Eagle
+                        damageBase(25);
+                        this.destroy();
+                        return;
+                    }
+
+                    if (this.ownerType === 'player') {
+                        for (let i = enemies.length - 1; i >= 0; i--) {
+                            const enemy = enemies[i];
+                            if (pos.distanceTo(enemy.mesh.position) < (this.radius + enemy.radius)) {
+                                enemy.hp -= 1;
+                                
+                                if (enemy.isBoss) {
+                                    updateBossHP(enemy.hp);
+                                }
+
+                                if (enemy.hp <= 0) {
+                                    if (enemy.isBoss) {
+                                        bossRef = null;
+                                        document.getElementById('boss-hp-container').classList.add('hidden');
+                                        score += 1000;
+                                        spawnPowerup(enemy.mesh.position);
+                                    }
+
+                                    // Random Powerup Drop Chance (35%)
+                                    if (Math.random() < 0.35 && !enemy.isBoss) {
+                                        spawnPowerup(enemy.mesh.position);
+                                    }
+
+                                    enemy.destroy();
+                                    enemies.splice(i, 1);
+                                    if (this.ownerPlayer) this.ownerPlayer.kills += 1;
+                                    totalKills++;
+                                    waveKills++;
+                                    score += enemy.type === 'fast' ? 150 : enemy.type === 'heavy' ? 250 : 100;
+                                    audio.playExplosion(false);
+                                } else {
+                                    audio.playHit();
+                                }
+                                this.destroy();
+                                return;
+                            }
+                        }
+                    } else {
+                        activePlayers.forEach((p) => {
+                            if (p.tank && p.hp > 0 && pos.distanceTo(p.tank.mesh.position) < (this.radius + p.tank.radius)) {
+                                if (p.shieldTimer <= 0) {
+                                    damagePlayer(p, 25);
+                                }
+                                this.destroy();
+                            }
+                        });
+                    }
+                }
+
+                destroy() {
+                    this.active = false;
+                    scene.remove(this.mesh);
+                }
+            }
+
+            class PowerUpEntity {
+                constructor(pos, typeObj) {
+                    this.type = typeObj;
+                    const geo = new THREE.OctahedronGeometry(0.5, 0);
+                    const mat = new THREE.MeshStandardMaterial({ color: typeObj.color, emissive: typeObj.color, emissiveIntensity: 0.4, flatShading: true });
+                    this.mesh = new THREE.Mesh(geo, mat);
+                    this.mesh.position.set(pos.x, 0.8, pos.z);
+                    scene.add(this.mesh);
+
+                    this.radius = 0.8;
+                    this.life = 15.0; // Seconds before despawning
+                }
+
+                update(delta) {
+                    this.mesh.rotation.y += delta * 2.5;
+                    this.mesh.position.y = 0.8 + Math.sin(performance.now() * 0.005) * 0.15;
+                    this.life -= delta;
+                    return this.life > 0;
+                }
+
+                destroy() {
+                    scene.remove(this.mesh);
+                }
+            }
+
+            function spawnPowerup(pos) {
+                const typeObj = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+                powerups.push(new PowerUpEntity(pos, typeObj));
+            }
+
+            function triggerPowerup(playerObj, typeObj) {
+                audio.playPowerup();
+                showPowerupBanner(`${typeObj.icon} ${typeObj.msg}`);
+
+                // Send vibration / alert to remote controller handset
+                if (playerObj.conn && playerObj.conn.send) {
+                    playerObj.conn.send({ type: 'powerup_acquired', icon: typeObj.icon, msg: typeObj.msg });
+                }
+
+                if (typeObj.id === 'star') {
+                    playerObj.starTimer = 12.0;
+                } else if (typeObj.id === 'shield') {
+                    playerObj.shieldTimer = 10.0;
+                } else if (typeObj.id === 'nuke') {
+                    enemies.forEach(e => {
+                        e.destroy();
+                        totalKills++;
+                        waveKills++;
+                        score += 100;
+                    });
+                    enemies.length = 0;
+                    bossRef = null;
+                    document.getElementById('boss-hp-container').classList.add('hidden');
+                } else if (typeObj.id === 'shovel') {
+                    activateBaseFortify();
+                } else if (typeObj.id === 'clock') {
+                    freezeTimer = 8.0;
+                } else if (typeObj.id === 'medkit') {
+                    playerObj.hp = 100;
+                }
+                updateHUD();
+            }
+
+            function activateBaseFortify() {
+                fortifyTimer = 15.0;
+                const fortifyCoords = [[17, 9], [17, 10], [17, 11], [18, 9], [18, 11], [19, 9], [19, 11]];
+
+                fortifyCoords.forEach(([r, c]) => {
+                    mapGrid[r][c] = 2; // Temporary Steel
+                });
+                buildMap();
+            }
+
+            function deactivateBaseFortify() {
+                const fortifyCoords = [[17, 9], [17, 10], [17, 11], [18, 9], [18, 11], [19, 9], [19, 11]];
+                fortifyCoords.forEach(([r, c]) => {
+                    mapGrid[r][c] = 1; // Revert to Brick
+                });
+                buildMap();
+            }
+
+            function showPowerupBanner(text) {
+                const banner = document.getElementById('powerup-banner');
+                document.getElementById('powerup-msg').innerText = text;
+                banner.classList.remove('scale-0');
+                banner.classList.add('scale-100');
+                setTimeout(() => {
+                    banner.classList.remove('scale-100');
+                    banner.classList.add('scale-0');
+                }, 2500);
+            }
+
+            function damagePlayer(playerObj, amount) {
+                playerObj.hp = Math.max(0, playerObj.hp - amount);
+                audio.playHit();
+
+                if (playerObj.conn && playerObj.conn.send) {
+                    playerObj.conn.send({ type: 'hit_vibrate' });
+                }
+
+                if (playerObj.hp <= 0) {
+                    playerObj.lives -= 1;
+                    if (playerObj.tank) createExplosionVFX(playerObj.tank.mesh.position, 0xffff00);
+
+                    if (playerObj.lives > 0) {
+                        setTimeout(() => {
+                            playerObj.hp = 100;
+                            if (playerObj.tank) playerObj.tank.resetPosition();
+                        }, 1200);
+                    }
+                }
+                updateHUD();
+            }
+
+            function damageBase(amount) {
+                baseHp = Math.max(0, baseHp - amount);
+                audio.playHit();
+                updateHUD();
+
+                if (baseHp <= 0) {
+                    if (eagleMesh) createExplosionVFX(eagleMesh.position, 0xff0000, 30);
+                    audio.playExplosion(true);
+                    triggerGameOver(false);
+                }
+            }
+
+            function updateBossHP(hp) {
+                const maxHp = 25 + Math.min(40, currentWave * 5);
+                const pct = Math.max(0, (hp / maxHp) * 100);
+                document.getElementById('boss-hp-bar').style.width = `${pct}%`;
+            }
+
+            function checkWallCollision(pos, radius) {
+                const minC = Math.floor((pos.x - radius + MAP_OFFSET + CELL_SIZE / 2) / CELL_SIZE);
+                const maxC = Math.floor((pos.x + radius + MAP_OFFSET + CELL_SIZE / 2) / CELL_SIZE);
+                const minR = Math.floor((pos.z - radius + MAP_OFFSET + CELL_SIZE / 2) / CELL_SIZE);
+                const maxR = Math.floor((pos.z + radius + MAP_OFFSET + CELL_SIZE / 2) / CELL_SIZE);
+
+                for (let r = minR; r <= maxR; r++) {
+                    for (let c = minC; c <= maxC; c++) {
+                        if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE) return true;
+                        const tile = mapGrid[r][c];
+                        if (tile === 1 || tile === 2 || tile === 3 || tile === 5) return true;
+                    }
+                }
+                return false;
+            }
+
+            function createExplosionVFX(pos, colorHex, count = 15) {
+                for (let i = 0; i < count; i++) {
+                    const vel = new THREE.Vector3((Math.random() - 0.5) * 12, Math.random() * 8 + 2, (Math.random() - 0.5) * 12);
+                    particles.push(new Particle(pos, colorHex, 0.35, vel));
+                }
+            }
+
+            class Particle {
+                constructor(pos, colorHex, scale, velocity) {
+                    this.mesh = new THREE.Mesh(new THREE.BoxGeometry(scale, scale, scale), new THREE.MeshBasicMaterial({ color: colorHex }));
+                    this.mesh.position.copy(pos);
+                    this.velocity = velocity;
+                    this.life = 1.0;
+                    scene.add(this.mesh);
+                }
+
+                update(delta) {
+                    this.mesh.position.add(this.velocity.clone().multiplyScalar(delta));
+                    this.life -= delta * 2.5;
+                    this.mesh.scale.multiplyScalar(0.92);
+                    return this.life > 0;
+                }
+
+                destroy() {
+                    scene.remove(this.mesh);
+                }
+            }
+
+            function spawnPlayerTank(p) {
+                if (p.tank) scene.remove(p.tank.mesh);
+                p.hp = 100;
+                p.tank = new PlayerTankEntity(p);
+            }
+
+            function updateHUD() {
+                document.getElementById('base-hp-text').innerText = `${baseHp}%`;
+                document.getElementById('base-hp-bar').style.width = `${baseHp}%`;
+                document.getElementById('score-text').innerText = score.toString().padStart(4, '0');
+                document.getElementById('enemy-count').innerText = enemies.length;
+                document.getElementById('wave-title').innerText = `WAVE ${currentWave}`;
+
+                const mins = Math.floor(gameTime / 60).toString().padStart(2, '0');
+                const secs = Math.floor(gameTime % 60).toString().padStart(2, '0');
+                document.getElementById('timer').innerText = `${mins}:${secs}`;
+
+                const playerHudContainer = document.getElementById('players-hud-bar');
+                playerHudContainer.innerHTML = '';
+
+                activePlayers.forEach((p) => {
+                    const palette = PLAYER_PALETTE[p.slotIndex % PLAYER_PALETTE.length];
+                    const badge = document.createElement('div');
+                    badge.className = "bg-gray-900/90 backdrop-blur border border-gray-700 rounded-lg p-2 flex items-center gap-2 min-w-[140px]";
+                    
+                    let pwrIcons = '';
+                    if (p.starTimer > 0) pwrIcons += '🌟';
+                    if (p.shieldTimer > 0) pwrIcons += '🛡️';
+
+                    badge.innerHTML = `
+                        <div class="w-3 h-3 rounded-full ${palette.tailwind}"></div>
+                        <div class="flex-1">
+                            <div class="text-[9px] font-bold text-white flex justify-between items-center">
+                                <span>${p.name} ${pwrIcons}</span>
+                                <span class="text-yellow-400">x${p.lives}</span>
+                            </div>
+                            <div class="w-full bg-gray-800 h-1.5 rounded-full overflow-hidden mt-1 border border-gray-600">
+                                <div class="${palette.tailwind} h-full transition-all" style="width: ${p.hp}%"></div>
+                            </div>
+                        </div>
+                    `;
+                    playerHudContainer.appendChild(badge);
+                });
+            }
+
+            function startGame() {
+                gameTime = 0;
+                currentWave = 1;
+                waveKills = 0;
+                killsToNextWave = 10;
+                score = 0;
+                totalKills = 0;
+                baseHp = 100;
+                freezeTimer = 0;
+                fortifyTimer = 0;
+                bossRef = null;
+
+                mapGrid = JSON.parse(JSON.stringify(initialMapGrid));
+                buildMap();
+
+                enemies.forEach(e => scene.remove(e.mesh));
+                bullets.forEach(b => scene.remove(b.mesh));
+                powerups.forEach(p => p.destroy());
+                particles.forEach(p => p.destroy());
+                enemies.length = 0;
+                bullets.length = 0;
+                powerups.length = 0;
+                particles.length = 0;
+
+                activePlayers.forEach((p) => {
+                    p.lives = 3;
+                    p.starTimer = 0;
+                    p.shieldTimer = 0;
+                    spawnPlayerTank(p);
+                });
+
+                document.getElementById('host-lobby').classList.add('hidden');
+                document.getElementById('hud').classList.remove('hidden');
+                document.getElementById('players-hud-bar').classList.remove('hidden');
+                document.getElementById('boss-hp-container').classList.add('hidden');
+
+                gameState = 'PLAYING';
+                audio.startBGM();
+                updateHUD();
+            }
+
+            function triggerGameOver(isVictory) {
+                gameState = 'OVER';
+                audio.stopBGM();
+                document.getElementById('hud').classList.add('hidden');
+                document.getElementById('players-hud-bar').classList.add('hidden');
+                document.getElementById('boss-hp-container').classList.add('hidden');
+
+                const endScreen = document.getElementById('gameover-screen');
+                endScreen.classList.remove('hidden');
+
+                const title = document.getElementById('end-title');
+                const sub = document.getElementById('end-subtitle');
+
+                title.innerText = "GAME OVER";
+                title.className = "text-3xl font-extrabold text-red-500 arcade-shadow mb-2";
+                sub.innerText = "THE EAGLE BASE WAS DESTROYED";
+
+                const elapsed = Math.floor(gameTime);
+                const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+                const secs = Math.floor(elapsed % 60).toString().padStart(2, '0');
+                document.getElementById('end-time').innerText = `${mins}:${secs}`;
+                document.getElementById('end-kills').innerText = totalKills;
+                document.getElementById('end-score').innerText = score;
+            }
+
+            document.getElementById('start-btn').addEventListener('click', () => {
+                audio.init();
+                startGame();
+            });
+
+            document.getElementById('restart-btn').addEventListener('click', () => {
+                document.getElementById('gameover-screen').classList.add('hidden');
+                document.getElementById('host-lobby').classList.remove('hidden');
+                gameState = 'LOBBY';
+            });
+
+            // Main Animation & Spawner Loop
+            let spawnTimer = 0;
+            let lastTime = performance.now();
+
+            function animate(now) {
+                requestAnimationFrame(animate);
+
+                const delta = Math.min((now - lastTime) / 1000, 0.1);
+                lastTime = now;
+
+                // Animate Water Ripple Vertices
+                waterMeshes.forEach(water => {
+                    const posAttr = water.geometry.attributes.position;
+                    const initial = water.userData.initialPos;
+                    const timeSec = now * 0.003;
+                    
+                    for (let i = 0; i < posAttr.count; i++) {
+                        const vx = initial.getX(i);
+                        const vz = initial.getZ(i);
+                        const wave = Math.sin(timeSec + vx * 2 + vz * 2) * 0.06;
+                        posAttr.setY(i, wave);
+                    }
+                    posAttr.needsUpdate = true;
+                });
+
+                if (gameState === 'PLAYING') {
+                    gameTime += delta; // Survival count-up timer
+
+                    // Wave advancement logic (every 10-15 kills per wave)
+                    if (waveKills >= killsToNextWave) {
+                        currentWave += 1;
+                        waveKills = 0;
+                        killsToNextWave = 10 + currentWave * 4;
+                        showPowerupBanner(`⚡ WAVE ${currentWave} STARTED!`);
+                    }
+
+                    // Reliable Titan Boss Spawning (Every 3 Waves e.g. Wave 3, 6, 9, 12...)
+                    if (currentWave % 3 === 0 && !bossRef && enemies.filter(e => e.isBoss).length === 0) {
+                        const bossSpawnPos = gridToWorld(10, 1);
+                        bossRef = new EnemyTankEntity(bossSpawnPos, 'boss');
+                        enemies.push(bossRef);
+                        document.getElementById('boss-hp-container').classList.remove('hidden');
+                        updateBossHP(bossRef.hp);
+                        audio.playBossSiren();
+                        showPowerupBanner("⚠️ TITAN BOSS SPAWNED!");
+                    }
+
+                    // Global Timers Update
+                    if (freezeTimer > 0) freezeTimer -= delta;
+                    if (fortifyTimer > 0) {
+                        fortifyTimer -= delta;
+                        if (fortifyTimer <= 0) deactivateBaseFortify();
+                    }
+
+                    updateHUD();
+
+                    // Enemy Spawner Logic (Scales dynamically with players and infinite waves)
+                    spawnTimer += delta;
+                    const maxEnemies = Math.min(18, (4 + currentWave * 2) + activePlayers.size);
+                    const spawnInterval = Math.max(0.8, 2.5 - (currentWave * 0.15));
+
+                    if (spawnTimer >= spawnInterval && enemies.length < maxEnemies) {
+                        spawnTimer = 0;
+                        const sp = enemySpawnPoints[Math.floor(Math.random() * enemySpawnPoints.length)];
+                        
+                        const rand = Math.random();
+                        let type = 'basic';
+                        if (currentWave >= 2 && rand < 0.45) type = 'fast';
+                        if (currentWave >= 2 && rand > 0.70) type = 'heavy';
+
+                        enemies.push(new EnemyTankEntity(sp, type));
+                    }
+
+                    // Update Entities
+                    activePlayers.forEach((p) => {
+                        if (p.tank) p.tank.update(delta, now / 1000);
+                    });
+
+                    enemies.forEach(e => e.update(delta, now / 1000));
+
+                    for (let i = bullets.length - 1; i >= 0; i--) {
+                        bullets[i].update(delta);
+                        if (!bullets[i].active) bullets.splice(i, 1);
+                    }
+
+                    // Update Powerup Pickups & Collision
+                    for (let i = powerups.length - 1; i >= 0; i--) {
+                        const pwr = powerups[i];
+                        if (!pwr.update(delta)) {
+                            pwr.destroy();
+                            powerups.splice(i, 1);
+                            continue;
+                        }
+
+                        // Check Collision with players
+                        activePlayers.forEach((p) => {
+                            if (p.tank && p.hp > 0 && pwr.mesh.position.distanceTo(p.tank.mesh.position) < (pwr.radius + p.tank.radius)) {
+                                triggerPowerup(p, pwr.type);
+                                pwr.destroy();
+                                powerups.splice(i, 1);
+                            }
+                        });
+                    }
+
+                    for (let i = particles.length - 1; i >= 0; i--) {
+                        if (!particles[i].update(delta)) {
+                            particles[i].destroy();
+                            particles.splice(i, 1);
+                        }
+                    }
+                }
+
+                renderer.render(scene, camera);
+            }
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            animate(performance.now());
+        }
+    </script>
+</body>
+</html>
